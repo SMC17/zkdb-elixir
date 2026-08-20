@@ -131,4 +131,4 @@ sub-millisecond operations).
 
 ## License
 
-AGPL-3.0. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE).
