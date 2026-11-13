@@ -100,7 +100,7 @@ fn badArg(env: ?*c.ErlNifEnv) c.ERL_NIF_TERM {
 }
 
 // ---- NIF: zkdb_sum_f64(List :: [float]) → float ----
-export fn nif_sum_f64(env: ?*c.ErlNifEnv, argc: c_int, argv: [*c]const c.ERL_NIF_TERM) c.ERL_NIF_TERM {
+fn impl_sum_f64(env: ?*c.ErlNifEnv, argc: c_int, argv: [*c]const c.ERL_NIF_TERM) callconv(.c) c.ERL_NIF_TERM {
     if (argc != 1) return badArg(env);
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
@@ -110,7 +110,7 @@ export fn nif_sum_f64(env: ?*c.ErlNifEnv, argc: c_int, argv: [*c]const c.ERL_NIF
 }
 
 // ---- NIF: zkdb_avg_f64(List :: [float]) → float ----
-export fn nif_avg_f64(env: ?*c.ErlNifEnv, argc: c_int, argv: [*c]const c.ERL_NIF_TERM) c.ERL_NIF_TERM {
+fn impl_avg_f64(env: ?*c.ErlNifEnv, argc: c_int, argv: [*c]const c.ERL_NIF_TERM) callconv(.c) c.ERL_NIF_TERM {
     if (argc != 1) return badArg(env);
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
@@ -121,7 +121,7 @@ export fn nif_avg_f64(env: ?*c.ErlNifEnv, argc: c_int, argv: [*c]const c.ERL_NIF
 
 // ---- NIF: zkdb_asof_join(LeftTs :: [integer], RightTs :: [integer]) → [integer] ----
 // Returns a list of right indices (one per left row), maxInt(usize) for no-match.
-export fn nif_asof_join(env: ?*c.ErlNifEnv, argc: c_int, argv: [*c]const c.ERL_NIF_TERM) c.ERL_NIF_TERM {
+fn impl_asof_join(env: ?*c.ErlNifEnv, argc: c_int, argv: [*c]const c.ERL_NIF_TERM) callconv(.c) c.ERL_NIF_TERM {
     if (argc != 2) return badArg(env);
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
@@ -148,7 +148,7 @@ export fn nif_asof_join(env: ?*c.ErlNifEnv, argc: c_int, argv: [*c]const c.ERL_N
 
 // ---- NIF: zkdb_wj_sum(SymL, TsL, SymR, TsR, DataR, WindowNs) → [float] ----
 // All sym arguments are lists of integers (already-interned symbol IDs).
-export fn nif_wj_sum(env: ?*c.ErlNifEnv, argc: c_int, argv: [*c]const c.ERL_NIF_TERM) c.ERL_NIF_TERM {
+fn impl_wj_sum(env: ?*c.ErlNifEnv, argc: c_int, argv: [*c]const c.ERL_NIF_TERM) callconv(.c) c.ERL_NIF_TERM {
     if (argc != 6) return badArg(env);
     var arena = std.heap.ArenaAllocator.init(gpa);
     defer arena.deinit();
@@ -213,12 +213,41 @@ export fn nif_wj_sum(env: ?*c.ErlNifEnv, argc: c_int, argv: [*c]const c.ERL_NIF_
     return c.enif_make_list_from_array(env, terms.ptr, @intCast(terms.len));
 }
 
+// ---- Scheduling ----
+// Inputs at or above this many elements run on a dirty CPU scheduler, so a
+// large join cannot hold a normal BEAM scheduler (test/scheduling_test.exs).
+// Smaller inputs stay on the calling scheduler and skip the handoff.
+const dirty_threshold: c_uint = 10_000;
+
+fn isLarge(env: ?*c.ErlNifEnv, argv: [*c]const c.ERL_NIF_TERM, list_args: []const usize) bool {
+    for (list_args) |i| {
+        var len: c_uint = 0;
+        if (c.enif_get_list_length(env, argv[i], &len) != 0 and len >= dirty_threshold) return true;
+    }
+    return false;
+}
+
+fn dispatch(
+    comptime name: [:0]const u8,
+    comptime impl: fn (?*c.ErlNifEnv, c_int, [*c]const c.ERL_NIF_TERM) callconv(.c) c.ERL_NIF_TERM,
+    comptime list_args: []const usize,
+) fn (?*c.ErlNifEnv, c_int, [*c]const c.ERL_NIF_TERM) callconv(.c) c.ERL_NIF_TERM {
+    return struct {
+        fn f(env: ?*c.ErlNifEnv, argc: c_int, argv: [*c]const c.ERL_NIF_TERM) callconv(.c) c.ERL_NIF_TERM {
+            if (isLarge(env, argv, list_args)) {
+                return c.enif_schedule_nif(env, name, c.ERL_NIF_DIRTY_JOB_CPU_BOUND, impl, argc, argv);
+            }
+            return impl(env, argc, argv);
+        }
+    }.f;
+}
+
 // ---- NIF function table ----
 const nif_funcs = [_]c.ErlNifFunc{
-    .{ .name = "sum_f64",   .arity = 1, .fptr = nif_sum_f64,   .flags = 0 },
-    .{ .name = "avg_f64",   .arity = 1, .fptr = nif_avg_f64,   .flags = 0 },
-    .{ .name = "asof_join", .arity = 2, .fptr = nif_asof_join, .flags = 0 },
-    .{ .name = "wj_sum",    .arity = 6, .fptr = nif_wj_sum,    .flags = 0 },
+    .{ .name = "sum_f64", .arity = 1, .fptr = dispatch("sum_f64", impl_sum_f64, &.{0}), .flags = 0 },
+    .{ .name = "avg_f64", .arity = 1, .fptr = dispatch("avg_f64", impl_avg_f64, &.{0}), .flags = 0 },
+    .{ .name = "asof_join", .arity = 2, .fptr = dispatch("asof_join", impl_asof_join, &.{ 0, 1 }), .flags = 0 },
+    .{ .name = "wj_sum", .arity = 6, .fptr = dispatch("wj_sum", impl_wj_sum, &.{ 0, 2 }), .flags = 0 },
 };
 
 export fn nif_load(_: ?*c.ErlNifEnv, _: [*c]?*anyopaque, _: c.ERL_NIF_TERM) c_int {
