@@ -26,6 +26,4 @@ priv/*.so
 _build/
 deps/
 .elixir_ls/
-stax-triton-kernels/
-throughline-rl/
 native/zkdb_nif/zig-out/
