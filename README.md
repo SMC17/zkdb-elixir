@@ -12,7 +12,7 @@ and protocol. Neither side pretends to do the other's job.
 
 ## Status
 
-**Working prototype.** 5/5 ExUnit tests pass from a fresh clone (`mix test`).
+**Working prototype.** 8/8 ExUnit tests pass from a fresh clone (`mix test`).
 Not published to Hex. Local path dep or GitHub dep for now.
 
 ## API
@@ -79,7 +79,7 @@ mix test
 with `cd native/zkdb_nif && zig build -Derlang-root=/path/to/erlang`.
 
 Fresh clone, 2026-11-12, macOS aarch64, OTP 28, Elixir 1.18.5, Zig 0.16.0:
-5/5 ExUnit tests pass.
+8/8 ExUnit tests pass.
 
 ## Composing with OTP
 
@@ -101,13 +101,15 @@ defmodule PriceServer do
 end
 ```
 
-For large datasets, run the NIF on a dirty scheduler to avoid blocking the BEAM:
-this is on the roadmap; current calls use the default scheduler (suitable for
-sub-millisecond operations).
+Inputs of 10,000 elements or more are moved to a dirty CPU scheduler with
+`enif_schedule_nif`, so a large join never holds a normal BEAM scheduler;
+smaller inputs run in place. `test/scheduling_test.exs` checks this with the
+VM's `long_schedule` monitor: before the change, a 1M-row `asof_join` held a
+normal scheduler for 617 ms; after it, no event above 20 ms.
 
 ## Roadmap
 
-- [ ] Dirty scheduler for long-running joins (>1ms)
+- [x] Dirty scheduler for large inputs (10,000+ elements)
 - [ ] Binary term format (ETF) for large vector transfer — avoid list overhead
 - [ ] Resource types for persistent zkdb Table handles (no copy per call)
 - [ ] `wj_avg`, `wj_last`, `wj_min`, `wj_max` NIF variants
