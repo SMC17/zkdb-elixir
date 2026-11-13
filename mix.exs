@@ -1,3 +1,25 @@
+defmodule Mix.Tasks.Compile.ZkdbNif do
+  @moduledoc "Builds native/zkdb_nif with `zig build` and copies it to priv/zkdb_nif.so."
+  use Mix.Task.Compiler
+
+  @impl true
+  def run(_args) do
+    native = Path.expand("native/zkdb_nif")
+    {out, status} = System.cmd("zig", ["build"], cd: native, stderr_to_stdout: true)
+    if status != 0, do: Mix.raise("zig build failed:\n" <> out)
+
+    src =
+      Enum.find(
+        ["libzkdb_nif.so", "libzkdb_nif.dylib"],
+        &File.exists?(Path.join([native, "zig-out/lib", &1]))
+      ) || Mix.raise("zig build produced no libzkdb_nif")
+
+    File.mkdir_p!("priv")
+    File.cp!(Path.join([native, "zig-out/lib", src]), "priv/zkdb_nif.so")
+    {:ok, []}
+  end
+end
+
 defmodule ZkdbElixir.MixProject do
   use Mix.Project
 
@@ -6,6 +28,7 @@ defmodule ZkdbElixir.MixProject do
       app: :zkdb_elixir,
       version: "0.1.0",
       elixir: "~> 1.18",
+      compilers: [:zkdb_nif] ++ Mix.compilers(),
       start_permanent: Mix.env() == :prod,
       deps: deps()
     ]
