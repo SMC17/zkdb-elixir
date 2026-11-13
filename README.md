@@ -10,7 +10,7 @@ and protocol. Neither side pretends to do the other's job.
 
 ## Status
 
-**Working prototype.** 5/5 ExUnit tests pass. NIF loads cleanly under OTP 28.
+**Working prototype.** 5/5 ExUnit tests pass from a fresh clone (`mix test`).
 Not published to Hex. Local path dep or GitHub dep for now.
 
 ## API
@@ -57,10 +57,8 @@ Elixir (OTP)
 Zig (zkdb_nif.so)
   sum_f64 / avg_f64 / asof_join / wj_sum
   │
-  │  @import("zkdb")
-  ▼
-zkdb primitives
-  vector.zig (SIMD)  asof.zig  wj.zig
+  (self-contained ports of the zkdb SIMD sum,
+   asof-join and window-join kernels)
 ```
 
 The NIF uses an Arena allocator per call — no cross-call state, no GC pressure
@@ -68,33 +66,18 @@ on the BEAM scheduler.
 
 ## Build
 
-**Requirements**: Zig 0.16+, Erlang/OTP 27+, Elixir 1.17+
+**Requirements**: Zig 0.16, Erlang/OTP 27+, Elixir 1.17+, with `erl` on PATH.
 
 ```sh
-# 1. Build the Zig NIF shared library
-cd native/zkdb_nif
-zig build -Doptimize=ReleaseFast
-
-# 2. Copy the .so to priv/
-mkdir -p ../../priv
-cp zig-out/lib/libzkdb_nif.so ../../priv/zkdb_nif.so
-
-# 3. Run Elixir tests
-cd ../..
 mix test
 ```
 
-The `@on_load :load_nif` in `ZkdbElixir` loads `priv/zkdb_nif.so` at module
-load time. If the .so is missing, all NIF calls raise `:nif_not_loaded`.
+`mix compile` runs `zig build` in `native/zkdb_nif` and copies the library to
+`priv/zkdb_nif.so`. The Erlang headers are found from `erl` on PATH; override
+with `cd native/zkdb_nif && zig build -Derlang-root=/path/to/erlang`.
 
-## Erlang root
-
-The NIF build detects the Erlang root automatically via `-Derlang-root=<path>`.
-Default is `/home/stax/.local/share/mise/installs/erlang/28.5`. Override:
-
-```sh
-zig build -Derlang-root=$(erl -noshell -eval 'io:format("~s", [code:root_dir()])' -s init stop)
-```
+Fresh clone, 2026-11-12, macOS aarch64, OTP 28, Elixir 1.18.5, Zig 0.16.0:
+5/5 ExUnit tests pass.
 
 ## Composing with OTP
 
@@ -126,7 +109,8 @@ sub-millisecond operations).
 - [ ] Binary term format (ETF) for large vector transfer — avoid list overhead
 - [ ] Resource types for persistent zkdb Table handles (no copy per call)
 - [ ] `wj_avg`, `wj_last`, `wj_min`, `wj_max` NIF variants
-- [ ] Mix task to build NIF automatically (`mix zkdb.build`)
+- [x] Mix compiler builds the NIF automatically
+- [ ] Depend on zkdb directly instead of carrying ported kernels
 - [ ] Hex package once API stabilizes
 
 ## License
