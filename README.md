@@ -1,5 +1,7 @@
 # zkdb-elixir
 
+**[Status](STATUS.md) · [Roadmap](ROADMAP.md) · [Contributing](CONTRIBUTING.md) · [Issues](https://github.com/SMC17/zkdb-elixir/issues) · [All SMC17 work](https://github.com/users/SMC17/projects/16)**
+
 Elixir/OTP bindings for [zkdb](https://github.com/SMC17/zkdb) via Erlang NIF.
 
 Zig data plane. Elixir control plane.
